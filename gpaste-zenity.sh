@@ -78,7 +78,7 @@ gen_pipe() {
 	done
 }
 
-gpaste_list=$(gpaste 2>/dev/null)
+gpaste_list=$(gpaste history 2>/dev/null)
 catch_fak $?
 
 lines_count=$(count "$gpaste_list")
