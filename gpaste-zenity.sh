@@ -16,10 +16,11 @@ gpaste_list=$(gpaste history --oneline 2>/dev/null)
 catch_fak $?
 
 clear_line() {
-	echo "$(echo "$1" \
+	
+	echo "$1" \
 		| sed 's/[\t ]\+/ /g' \
 		| sed 's/\(^[ ]\+\|[ ]\+$\)//g' \
-		2>/dev/null)"
+		2>/dev/null
 }
 
 gen_pipe() {
