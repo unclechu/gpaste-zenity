@@ -19,18 +19,8 @@ catch_fak() {
 	[ $1 -ne 0 ] && { echo fak 1>&2; exit 1; }
 }
 
-count() {
-	echo "$1" | wc -l 2>/dev/null
-	catch_fak $?
-}
-
-add() {
-	
-	[ "x$last_one_num" == 'x' ] && return 1
-	
-	len=${#variants[@]}
-	variants[$len]="$last_one_num:$last_one_contents"
-}
+gpaste_list=$(gpaste history --oneline 2>/dev/null)
+catch_fak $?
 
 clear_line() {
 	echo "$(echo "$1" \
@@ -39,35 +29,14 @@ clear_line() {
 		2>/dev/null)"
 }
 
-line_handler() {
-	
-	line=$1
-	echo "$line" | grep '^[0-9]\+: ' &>/dev/null
-	
-	if [ $? -eq 0 ]; then
-		
-		add
-		
-		last_one_num=$(echo "$line" | sed 's/^\([0-9]\+\): .*$/\1/g' 2>/dev/null)
-		catch_fak $?
-		line=$(echo "$line" | sed 's/^[0-9]\+: //g' 2>/dev/null)
-		catch_fak $?
-		line=$(clear_line "$line")
-		last_one_contents=$line
-	else
-		line=$(clear_line "$line")
-		last_one_contents="${last_one_contents}${line_separator}${line}"
-	fi
-}
-
 gen_pipe() {
 	
-	for item in "${variants[@]}"; do
+	while read item; do
 		
-		num=$(echo "$item" | sed 's/^\([0-9]\+\):.*$/\1/g' 2>/dev/null)
+		num=$(echo "$item" | grep -o '^[0-9]\+: ' 2>/dev/null)
 		catch_fak $?
-		contents=$(echo "$item" | sed 's/^[0-9]\+://g' 2>/dev/null)
-		catch_fak $?
+		contents=$(clear_line "${item:${#num}}")
+		num=$(echo "${num:0:-2}")
 		
 		if [ ${#contents} -gt $contents_limit ]; then
 			contents="${contents::real_contents_limit}${line_more}"
@@ -78,25 +47,8 @@ gen_pipe() {
 	done
 }
 
-gpaste_list=$(gpaste history 2>/dev/null)
-catch_fak $?
-
-lines_count=$(count "$gpaste_list")
-
-# fill #variants
-while [ $i -lt $[$lines_count] ]; do
-	
-	i=$[$i+1]
-	
-	line=$(echo "$gpaste_list" | head -n 1)
-	gpaste_list=$(echo "$gpaste_list" | tail -n $[`count "$gpaste_list"`-1])
-	
-	line_handler "$line"
-done
-add
-
-choose=$(gen_pipe | zenity \
-	--list \
+choose=$(echo "$gpaste_list" | gen_pipe | zenity \
+	--title 'gpaste-zenity' \
 	--text 'GPaste' \
 	--list \
 	--width 800 \
