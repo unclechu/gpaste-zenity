@@ -5,15 +5,8 @@
 
 # constants
 contents_limit=80
-line_separator=' '
 line_more='...'
 real_contents_limit=$[$contents_limit-${#line_more}]
-
-# variables
-i=0
-variants=()
-last_one_num=
-last_one_contents=
 
 catch_fak() {
 	[ $1 -ne 0 ] && { echo fak 1>&2; exit 1; }
