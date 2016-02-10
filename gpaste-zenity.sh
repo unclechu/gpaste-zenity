@@ -28,7 +28,7 @@ catch_fak $?
 clear_line() {
 	
 	echo "$1" \
-		| sed 's/[\t ]\+/ /g' \
+		| sed 's/[\t\r\n ]\+/ /g' \
 		| sed 's/\(^[ ]\+\|[ ]\+$\)//g' \
 		2>/dev/null
 }
