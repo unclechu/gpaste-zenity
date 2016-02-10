@@ -8,11 +8,21 @@ contents_limit=80
 line_more='...'
 real_contents_limit=$[$contents_limit-${#line_more}]
 
+gpaste_bin=
+if which gpaste-client 1>&- 2>&-; then
+	gpaste_bin=gpaste-client
+elif which gpaste 1>&- 2>&-; then
+	gpaste_bin=gpaste
+else
+	echo 'GPaste not found' 1>&2
+	exit 1
+fi
+
 catch_fak() {
 	[ $1 -ne 0 ] && { echo fak 1>&2; exit 1; }
 }
 
-gpaste_list=$(gpaste history --oneline 2>/dev/null)
+gpaste_list=$("$gpaste_bin" history --oneline 2>/dev/null)
 catch_fak $?
 
 clear_line() {
@@ -52,5 +62,5 @@ choose=$(echo "$gpaste_list" | gen_pipe | zenity \
 	2>/dev/null)
 [ $? -ne 0 ] && exit 1
 
-gpaste select $choose
+"$gpaste_bin" select $choose
 catch_fak $?
