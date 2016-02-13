@@ -3,10 +3,32 @@
 # Author: Viacheslav Lotsmanov <lotsmanov89@gmail.com>
 # License: GNU/GPLv3 (https://www.gnu.org/licenses/gpl-3.0.txt)
 
-# constants
-contents_limit=80
-line_more='...'
-real_contents_limit=$[$contents_limit-${#line_more}]
+CONTENTS_LIMIT=80
+LINE_MORE='...'
+REAL_CONTENTS_LIMIT=$[$CONTENTS_LIMIT-${#LINE_MORE}]
+MODE=select
+
+for opt in "$@"; do
+	case $opt in
+		-m=*|--mode=*)
+			MODE="${opt#*=}"
+			shift
+			;;
+		*)
+			echo "Unknown option: '$opt'" 1>&2
+			exit 1
+			;;
+	esac
+done
+
+case $MODE in
+	select|delete)
+		;;
+	*)
+		echo "Unknown mode: '$MODE'" 1>&2
+		exit 1
+		;;
+esac
 
 gpaste_bin=
 if which gpaste-client 1>&- 2>&-; then
@@ -22,7 +44,7 @@ catch_fak() {
 	[ $1 -ne 0 ] && { echo fak 1>&2; exit 1; }
 }
 
-gpaste_list=$("$gpaste_bin" history --oneline 2>/dev/null)
+gpaste_list=$("$gpaste_bin" history --oneline 2>&-)
 catch_fak $?
 
 clear_line() {
@@ -30,20 +52,20 @@ clear_line() {
 	echo "$1" \
 		| sed 's/[\t\r\n ]\+/ /g' \
 		| sed 's/\(^[ ]\+\|[ ]\+$\)//g' \
-		2>/dev/null
+		2>&-
 }
 
 gen_pipe() {
 	
 	while read item; do
 		
-		num=$(echo "$item" | grep -o '^[0-9]\+: ' 2>/dev/null)
+		num=$(echo "$item" | grep -o '^[0-9]\+: ' 2>&-)
 		catch_fak $?
 		contents=$(clear_line "${item:${#num}}")
 		num=$(echo "${num:0:-2}")
 		
-		if [ ${#contents} -gt $contents_limit ]; then
-			contents="${contents::real_contents_limit}${line_more}"
+		if [ ${#contents} -gt $CONTENTS_LIMIT ]; then
+			contents="${contents::REAL_CONTENTS_LIMIT}${LINE_MORE}"
 		fi
 		
 		echo $num
@@ -51,9 +73,11 @@ gen_pipe() {
 	done
 }
 
+title="GPaste ($MODE)"
+
 choose=$(echo "$gpaste_list" | gen_pipe | zenity \
 	--title 'gpaste-zenity' \
-	--text 'GPaste' \
+	--text "$title" \
 	--list \
 	--width 800 \
 	--height 600 \
@@ -62,5 +86,5 @@ choose=$(echo "$gpaste_list" | gen_pipe | zenity \
 	2>/dev/null)
 [ $? -ne 0 ] && exit 1
 
-"$gpaste_bin" select $choose
+"$gpaste_bin" "$MODE" "$choose"
 catch_fak $?
