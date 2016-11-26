@@ -156,15 +156,16 @@ choose_mode() {
 	echo "$chosen_mode"
 }
 
-ask_for_name_to_mask_password() {
-	local given_name=$(
+get_text_from_user() {
+	local text=$1
+	local given_value=$(
 		zenity \
 			--title "$WND_TITLE" \
-			--entry --text 'Enter a name for the password' \
+			--entry --text "$text" \
 			2>/dev/null
 		)
-	([ $? -ne 0 ] || [ "$given_name" == "" ]) && return 1
-	echo "$given_name"
+	([ $? -ne 0 ] || [ "$given_value" == "" ]) && return 1
+	echo "$given_value"
 }
 
 select_from_history() {
@@ -195,23 +196,52 @@ select_from_history() {
 warning() {
 	local msg=$1
 	zenity \
-		--width 250 \
+		--width 300 \
 		--title "$WND_TITLE" \
 		--warning --text="$msg" \
 		2>/dev/null
 }
 
+check_for_passwords() {
+	local list=$1
+	if [ "$list" == '' ]; then
+		warning 'No passwords in clipboard history'
+		return 1
+	fi
+}
 
-gpaste_list=$("$GPASTE_BIN" history --oneline 2>&-)
-catch_fak $?
+get_pass_name_id() {
+	local list=$1
+	local name=$2
+	
+	while [ "$list" != '' ]; do
+		local item=$(echo "$list" | head -n1)
+		local item_name=$(echo "$item" | sed 's/^[0-9]\+: \[Password\] //')
+		local item_id=$(echo "$item" | grep -o '^[0-9]\+')
+		list=$(echo "$list" | sed 1d)
+		
+		[ "$item_id" != "$[$item_id]" ] && continue
+		
+		if [ "$name" == "$item_name" ]; then
+			echo -n "$item_id"
+			break
+		fi
+	done
+}
 
+
+gpaste_list=$("$GPASTE_BIN" history --oneline 2>&-); catch_fak $?
 only_passwords_list=$(echo "$gpaste_list" | grep '^[0-9]\+: \[Password\] ')
+
+ASK_PASSWORD_TEXT='Enter a name for the password'
+ASK_OLD_PASSWORD_TEXT='Enter previous name of the password'
+ASK_NEW_PASSWORD_TEXT='Enter new name for the password'
+
 
 if [ "$gpaste_list" == '' ]; then
 	warning 'Clipboard history is empty'
 	exit 1
 fi
-
 
 if [ "$mode" == 'choose' ]; then
 	mode=$(choose_mode); [ $? -ne 0 ] && exit 1
@@ -220,22 +250,36 @@ fi
 
 if [ "$mode" == 'mask-last-password' ]; then
 	
-	name=$(ask_for_name_to_mask_password); [ $? -ne 0 ] && exit 1
+	name=$(get_text_from_user "$ASK_PASSWORD_TEXT"); [ $? -ne 0 ] && exit 1
 	mask_password_with_name_by_id "$id" "$name" || exit 1
 	
 elif [ "$mode" == 'mask-password' ]; then
 	
 	id=$(select_from_history 'select password to mask' 0 "$gpaste_list")
 	[ $? -ne 0 ] && exit 1
-	name=$(ask_for_name_to_mask_password); [ $? -ne 0 ] && exit 1
+	name=$(get_text_from_user "$ASK_PASSWORD_TEXT"); [ $? -ne 0 ] && exit 1
 	mask_password_with_name_by_id "$id" "$name" || exit 1
 	
 elif [ "$mode" == 'rename-password' ]; then
 	
-	echo 'not implemented yet!'
-	exit 1
+	check_for_passwords "$only_passwords_list" || exit 1
+	
+	prev_name=$(get_text_from_user "$ASK_OLD_PASSWORD_TEXT")
+	[ $? -ne 0 ] && exit 1
+	id=$(get_pass_name_id "$only_passwords_list" "$prev_name")
+	[ $? -ne 0 ] && exit 1
+	
+	if [ "$id" == '' ]; then
+		warning "Password by name '$prev_name' not found"
+		exit 1
+	fi
+	
+	name=$(get_text_from_user "$ASK_NEW_PASSWORD_TEXT"); [ $? -ne 0 ] && exit 1
+	mask_password_with_name_by_id "$id" "$name" || exit 1
 	
 elif [ "$mode" == 'select-and-rename-password' ]; then
+	
+	check_for_passwords "$only_passwords_list" || exit 1
 	
 	echo 'not implemented yet!'
 	exit 1
@@ -245,9 +289,8 @@ elif [ \
 	-o "$mode" == 'delete' \
 	-o "$mode" == 'select-password' \
 ]; then
-	if [ "$mode" == 'select-password' -a "$only_passwords_list" == '' ]; then
-		warning 'No passwords in clipboard history'
-		exit 1
+	if [ "$mode" == 'select-password' ]; then
+		check_for_passwords "$only_passwords_list" || exit 1
 	fi
 	title=$(
 		[ "$mode" == 'select-password' ] \
