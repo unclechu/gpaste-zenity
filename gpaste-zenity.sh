@@ -10,7 +10,7 @@ CONTENTS_LIMIT=80
 REAL_CONTENTS_LIMIT=$[$CONTENTS_LIMIT-${#LINE_MORE}]
 WND_TITLE=gpaste-zenity
 
-GPASTE_BIN=$(\
+GPASTE_BIN=$(
 	(which gpaste-client 1>&- 2>&- && echo 'gpaste-client') || \
 	(which gpaste        1>&- 2>&- && echo 'gpaste'       ) || \
 	exit 1
@@ -26,6 +26,7 @@ show_usage_info() {
 	echo '  -m=MODE  --mode=MODE  Examples:'
 	echo '                          --mode=select'
 	echo '                          --mode=delete'
+	echo '                          --mode=select-password'
 	echo '                          --mode=mask-password'
 	echo '                          --mode=mask-last-password'
 	echo '                          --mode=rename-password'
@@ -55,6 +56,7 @@ done
 
 case "$mode" in
 	select|delete) ;;
+	select-password) ;;
 	mask-password|mask-last-password) ;;
 	rename-password|select-and-rename-password) ;;
 	choose) ;;
@@ -128,6 +130,7 @@ choose_mode() {
 	local modes=(
 		'Select'                              'select'
 		'Delete'                              'delete'
+		'Select password'                     'select-password'
 		'Mask last password with name'        'mask-last-password'
 		'Select password and mask with name'  'mask-password'
 		'Rename password'                     'rename-password'
@@ -189,16 +192,23 @@ select_from_history() {
 	echo "$choose"
 }
 
+warning() {
+	local msg=$1
+	zenity \
+		--width 250 \
+		--title "$WND_TITLE" \
+		--warning --text="$msg" \
+		2>/dev/null
+}
+
 
 gpaste_list=$("$GPASTE_BIN" history --oneline 2>&-)
 catch_fak $?
 
+only_passwords_list=$(echo "$gpaste_list" | grep '^[0-9]\+: \[Password\] ')
+
 if [ "$gpaste_list" == '' ]; then
-	zenity \
-		--width 200 \
-		--title "$WND_TITLE" \
-		--warning --text='Clipboard history is empty' \
-		2>/dev/null
+	warning 'Clipboard history is empty'
 	exit 1
 fi
 
@@ -215,29 +225,56 @@ if [ "$mode" == 'mask-last-password' ]; then
 	
 elif [ "$mode" == 'mask-password' ]; then
 	
-	id=$(select_from_history "select password to mask" 0 "$gpaste_list")
+	id=$(select_from_history 'select password to mask' 0 "$gpaste_list")
 	[ $? -ne 0 ] && exit 1
 	name=$(ask_for_name_to_mask_password); [ $? -ne 0 ] && exit 1
 	mask_password_with_name_by_id "$id" "$name" || exit 1
 	
 elif [ "$mode" == 'rename-password' ]; then
+	
 	echo 'not implemented yet!'
 	exit 1
+	
 elif [ "$mode" == 'select-and-rename-password' ]; then
+	
 	echo 'not implemented yet!'
 	exit 1
-elif [ "$mode" == 'select' -o "$mode" == 'delete' ]; then
+	
+elif [ \
+	"$mode" == 'select' \
+	-o "$mode" == 'delete' \
+	-o "$mode" == 'select-password' \
+]; then
+	if [ "$mode" == 'select-password' -a "$only_passwords_list" == '' ]; then
+		warning 'No passwords in clipboard history'
+		exit 1
+	fi
+	title=$(
+		[ "$mode" == 'select-password' ] \
+			&& echo 'select password' \
+			|| echo "$mode"
+		)
+	list=$(
+		[ "$mode" == 'select-password' ] \
+			&& echo "$only_passwords_list" \
+			|| echo "$gpaste_list"
+		)
+	action=$(
+		[ "$mode" == 'select-password' ] \
+			&& echo 'select' \
+			|| echo "$mode"
+		)
 	choose=$(
 		select_from_history \
-			"$mode" \
+			"$title" \
 			"$([ "$mode" == 'delete' ] && echo 1 || echo 0)" \
-			"$gpaste_list"
+			"$list"
 		)
 	[ $? -ne 0 ] && exit 1
 	if [ "$mode" == 'delete' ]; then
 		echo "$choose" | tr '|' '\n' | delete_items
 	else
-		"$GPASTE_BIN" "$mode" "$choose"
+		"$GPASTE_BIN" "$action" "$choose"
 	fi
 	catch_fak $?
 else
