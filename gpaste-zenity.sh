@@ -68,8 +68,8 @@ gen_pipe() {
 			contents="${contents::REAL_CONTENTS_LIMIT}${LINE_MORE}"
 		fi
 		
-		echo $num
 		echo "$contents"
+		echo $num
 	done
 }
 
@@ -81,8 +81,11 @@ choose=$(echo "$gpaste_list" | gen_pipe | zenity \
 	--list \
 	--width 800 \
 	--height 600 \
-	--print-column=1 \
-	--column '#' --column 'Contents' \
+	--print-column=2 \
+	--hide-column=2 \
+	--hide-header \
+	--mid-search \
+	--column 'Contents' --column '#' \
 	2>/dev/null)
 [ $? -ne 0 ] && exit 1
 
