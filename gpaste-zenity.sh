@@ -281,8 +281,16 @@ elif [ "$mode" == 'select-and-rename-password' ]; then
 	
 	check_for_passwords "$only_passwords_list" || exit 1
 	
-	echo 'not implemented yet!'
-	exit 1
+	id=$(
+		select_from_history \
+			"select password to rename" \
+			0 \
+			"$only_passwords_list"
+		)
+	[ $? -ne 0 ] && exit 1
+	
+	name=$(get_text_from_user "$ASK_NEW_PASSWORD_TEXT"); [ $? -ne 0 ] && exit 1
+	mask_password_with_name_by_id "$id" "$name" || exit 1
 	
 elif [ \
 	"$mode" == 'select' \
