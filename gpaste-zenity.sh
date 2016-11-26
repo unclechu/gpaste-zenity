@@ -5,13 +5,10 @@
 
 exec 0</dev/null
 
-CONTENTS_LIMIT=80
 LINE_MORE='...'
+CONTENTS_LIMIT=80
 REAL_CONTENTS_LIMIT=$[$CONTENTS_LIMIT-${#LINE_MORE}]
 WND_TITLE=gpaste-zenity
-
-# could be changed by 'choose' mode
-mode=select
 
 GPASTE_BIN=$(\
 	(which gpaste-client 1>&- 2>&- && echo 'gpaste-client') || \
@@ -23,24 +20,47 @@ if [ $? -ne 0 ]; then
 	exit 1
 fi
 
+show_usage_info() {
+	echo "Usage: $(basename "$0") [OPTION...]"
+	echo '  -h       --help       Show this usage info'
+	echo '  -m=MODE  --mode=MODE  Examples:'
+	echo '                          --mode=select'
+	echo '                          --mode=delete'
+	echo '                          --mode=mask-password'
+	echo '                          --mode=mask-last-password'
+	echo '                          --mode=rename-password'
+	echo '                          --mode=select-and-rename-password'
+	echo '                          --mode=choose'
+}
+
+mode=select
+
 for opt in "$@"; do
 	case $opt in
 		-m=*|--mode=*)
 			mode="${opt#*=}"
 			shift
 			;;
+		-h|--help)
+			show_usage_info
+			exit 0
+			;;
 		*)
 			echo "Unknown option: '$opt'" 1>&2
+			show_usage_info 1>&2
 			exit 1
 			;;
 	esac
 done
 
 case "$mode" in
-	select|delete|choose)
-		;;
+	select|delete) ;;
+	mask-password|mask-last-password) ;;
+	rename-password|select-and-rename-password) ;;
+	choose) ;;
 	*)
 		echo "Unknown mode: '$mode'" 1>&2
+		show_usage_info 1>&2
 		exit 1
 		;;
 esac
@@ -72,6 +92,22 @@ gen_pipe() {
 	done
 }
 
+mask_password_with_name_by_id() {
+	exec 0</dev/null
+	
+	local id=$1
+	local name=$2
+	
+	"$GPASTE_BIN" set-password "$id" "$name" 1>&- 2>&-
+	if [ $? -ne 0 ]; then
+		local given_name=$("$GPASTE_BIN" get "$id" 2>&-)
+		[ "${given_name:0:11}" != '[Password] ' ] && return 1
+		local old_name=${given_name:11}
+		"$GPASTE_BIN" rename-password "$old_name" "$name" 1>&- 2>&-
+		[ $? -ne 0 ] && return 1
+	fi
+}
+
 # Hack for id-independent multiple deletion
 # using passwords naming.
 delete_items() {
@@ -79,14 +115,7 @@ delete_items() {
 	while read id; do
 		[ "$id" == "" ] && return 1
 		local name="__marked_to_delete_$id"
-		"$GPASTE_BIN" set-password "$id" "$name" 0<&- 1>&- 2>&-
-		if [ $? -ne 0 ]; then
-			local given_name=$("$GPASTE_BIN" get "$id" 0<&- 2>&-)
-			[ "${given_name:0:11}" != '[Password] ' ] && return 1
-			local old_name=${given_name:11}
-			"$GPASTE_BIN" rename-password "$old_name" "$name" 0<&- 1>&- 2>&-
-			[ $? -ne 0 ] && return 1
-		fi
+		mask_password_with_name_by_id "$id" "$name" 0<&-
 		names+=("$name")
 	done
 	for name in "${names[@]}"; do
@@ -98,10 +127,14 @@ delete_items() {
 
 choose_mode() {
 	local modes=( \
-		"Select" "select" \
-		"Delete" "delete"
+		'Select'                              'select'                      \
+		'Delete'                              'delete'                      \
+		'Mask last password with name'        'mask-last-password'          \
+		'Select and mask password with name'  'mask-password'               \
+		'Rename password'                     'rename-password'             \
+		'Select and rename password'          'select-and-rename-password'  \
 		)
-	local chosen_mode=$(printf "|%s" "${modes[@]}" \
+	local chosen_mode=$(printf '|%s' "${modes[@]}" \
 		| cut -b '2-' \
 		| tr '|' '\n' \
 		| zenity \
@@ -120,15 +153,27 @@ choose_mode() {
 	echo "$chosen_mode"
 }
 
+ask_for_name_to_mask_password() {
+	local given_name=$( \
+		zenity \
+			--title "$WND_TITLE" \
+			--entry --text 'Enter a name for the password' \
+			2>/dev/null
+		)
+	([ $? -ne 0 ] || [ "$given_name" == "" ]) && return 1
+	echo "$given_name"
+}
+
 
 gpaste_list=$("$GPASTE_BIN" history --oneline 2>&-)
 catch_fak $?
 
-if [ "$gpaste_list" == "" ]; then
+if [ "$gpaste_list" == '' ]; then
 	zenity \
 		--width 200 \
 		--title "$WND_TITLE" \
-		--warning --text="Clipboard history is empty"
+		--warning --text='Clipboard history is empty' \
+		2>/dev/null
 	exit 1
 fi
 
@@ -139,28 +184,48 @@ if [ "$mode" == 'choose' ]; then
 fi
 
 
-title="GPaste ($mode)"
+if [ "$mode" == 'mask-last-password' ]; then
+	
+	name=$(ask_for_name_to_mask_password)
+	catch_fak $?
+	mask_password_with_name_by_id "$id" "$name"
+	catch_fak $?
+	
+elif [ "$mode" == 'mask-password' ]; then
+	echo 'not implemented yet!'
+	exit 1
+elif [ "$mode" == 'rename-password' ]; then
+	echo 'not implemented yet!'
+	exit 1
+elif [ "$mode" == 'select-and-rename-password' ]; then
+	echo 'not implemented yet!'
+	exit 1
+elif [ "$mode" == 'select' -o "$mode" == 'delete' ]; then
+	
+	choose=$(echo "$gpaste_list" \
+		| gen_pipe \
+		| zenity \
+			--width 800 --height 600 \
+			--title "$WND_TITLE" \
+			--text "GPaste ($mode)" \
+			--list \
+			--print-column=2 \
+			--hide-column=2 \
+			--hide-header \
+			--mid-search \
+			$([ "$mode" == 'delete' ] && echo --multiple) \
+			--column 'Contents' --column '#' \
+			2>/dev/null
+		)
+	([ $? -ne 0 ] || [ "$choose" == "" ]) && exit 1
 
-choose=$(echo "$gpaste_list" \
-	| gen_pipe \
-	| zenity \
-		--width 800 --height 600 \
-		--title "$WND_TITLE" \
-		--text "$title" \
-		--list \
-		--print-column=2 \
-		--hide-column=2 \
-		--hide-header \
-		--mid-search \
-		$([ "$mode" == 'delete' ] && echo --multiple) \
-		--column 'Contents' --column '#' \
-		2>/dev/null
-	)
-([ $? -ne 0 ] || [ "$choose" == "" ]) && exit 1
-
-if [ "$mode" == 'delete' ]; then
-	echo "$choose" | tr '|' '\n' | delete_items
+	if [ "$mode" == 'delete' ]; then
+		echo "$choose" | tr '|' '\n' | delete_items
+	else
+		"$GPASTE_BIN" "$mode" "$choose"
+	fi
+	catch_fak $?
 else
-	"$GPASTE_BIN" "$mode" "$choose"
+	echo "Unexpected mode: '$mode'" 1>&2
+	exit 1
 fi
-catch_fak $?
