@@ -78,8 +78,7 @@ clear_line() {
 
 gen_pipe() {
 	while read item; do
-		num=$(echo "$item" | grep -o '^[0-9]\+: ' 2>&-)
-		catch_fak $?
+		num=$(echo "$item" | grep -o '^[0-9]\+: ' 2>&-); catch_fak $?
 		contents=$(clear_line "${item:${#num}}")
 		num=$(echo "${num:0:-2}")
 		
@@ -126,15 +125,16 @@ delete_items() {
 }
 
 choose_mode() {
-	local modes=( \
-		'Select'                              'select'                      \
-		'Delete'                              'delete'                      \
-		'Mask last password with name'        'mask-last-password'          \
-		'Select and mask password with name'  'mask-password'               \
-		'Rename password'                     'rename-password'             \
-		'Select and rename password'          'select-and-rename-password'  \
+	local modes=(
+		'Select'                              'select'
+		'Delete'                              'delete'
+		'Mask last password with name'        'mask-last-password'
+		'Select password and mask with name'  'mask-password'
+		'Rename password'                     'rename-password'
+		'Select password and rename'          'select-and-rename-password'
 		)
-	local chosen_mode=$(printf '|%s' "${modes[@]}" \
+	local chosen_mode=$(
+		printf '|%s' "${modes[@]}" \
 		| cut -b '2-' \
 		| tr '|' '\n' \
 		| zenity \
@@ -154,7 +154,7 @@ choose_mode() {
 }
 
 ask_for_name_to_mask_password() {
-	local given_name=$( \
+	local given_name=$(
 		zenity \
 			--title "$WND_TITLE" \
 			--entry --text 'Enter a name for the password' \
@@ -162,6 +162,31 @@ ask_for_name_to_mask_password() {
 		)
 	([ $? -ne 0 ] || [ "$given_name" == "" ]) && return 1
 	echo "$given_name"
+}
+
+select_from_history() {
+	local    title=$1
+	local multiple=$2
+	local     list=$3
+	
+	local choose=$(
+		echo "$list" \
+		| gen_pipe \
+		| zenity \
+			--width 800 --height 600 \
+			--title "$WND_TITLE" \
+			--text "GPaste ($title)" \
+			--list \
+			--print-column=2 \
+			--hide-column=2 \
+			--hide-header \
+			--mid-search \
+			$([ "$multiple" -eq 1 ] && echo --multiple) \
+			--column 'Contents' --column '#' \
+			2>/dev/null
+		)
+	([ $? -ne 0 ] || [ "$choose" == "" ]) && return 1
+	echo "$choose"
 }
 
 
@@ -179,21 +204,22 @@ fi
 
 
 if [ "$mode" == 'choose' ]; then
-	mode=$(choose_mode)
-	[ $? -ne 0 ] && exit 1
+	mode=$(choose_mode); [ $? -ne 0 ] && exit 1
 fi
 
 
 if [ "$mode" == 'mask-last-password' ]; then
 	
-	name=$(ask_for_name_to_mask_password)
-	catch_fak $?
-	mask_password_with_name_by_id "$id" "$name"
-	catch_fak $?
+	name=$(ask_for_name_to_mask_password); [ $? -ne 0 ] && exit 1
+	mask_password_with_name_by_id "$id" "$name" || exit 1
 	
 elif [ "$mode" == 'mask-password' ]; then
-	echo 'not implemented yet!'
-	exit 1
+	
+	id=$(select_from_history "select password to mask" 0 "$gpaste_list")
+	[ $? -ne 0 ] && exit 1
+	name=$(ask_for_name_to_mask_password); [ $? -ne 0 ] && exit 1
+	mask_password_with_name_by_id "$id" "$name" || exit 1
+	
 elif [ "$mode" == 'rename-password' ]; then
 	echo 'not implemented yet!'
 	exit 1
@@ -201,24 +227,13 @@ elif [ "$mode" == 'select-and-rename-password' ]; then
 	echo 'not implemented yet!'
 	exit 1
 elif [ "$mode" == 'select' -o "$mode" == 'delete' ]; then
-	
-	choose=$(echo "$gpaste_list" \
-		| gen_pipe \
-		| zenity \
-			--width 800 --height 600 \
-			--title "$WND_TITLE" \
-			--text "GPaste ($mode)" \
-			--list \
-			--print-column=2 \
-			--hide-column=2 \
-			--hide-header \
-			--mid-search \
-			$([ "$mode" == 'delete' ] && echo --multiple) \
-			--column 'Contents' --column '#' \
-			2>/dev/null
+	choose=$(
+		select_from_history \
+			"$mode" \
+			"$([ "$mode" == 'delete' ] && echo 1 || echo 0)" \
+			"$gpaste_list"
 		)
-	([ $? -ne 0 ] || [ "$choose" == "" ]) && exit 1
-
+	[ $? -ne 0 ] && exit 1
 	if [ "$mode" == 'delete' ]; then
 		echo "$choose" | tr '|' '\n' | delete_items
 	else
