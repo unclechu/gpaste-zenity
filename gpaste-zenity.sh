@@ -23,6 +23,7 @@ fi
 show_usage_info() {
 	echo "Usage: $(basename "$0") [OPTION...]"
 	echo '  -h       --help       Show this usage info'
+	echo '  -n       --numbers    Selection by numbers'
 	echo '  -m=MODE  --mode=MODE  Examples:'
 	echo '                          --mode=select'
 	echo '                          --mode=delete'
@@ -35,16 +36,21 @@ show_usage_info() {
 }
 
 mode=select
+by_numbers=0
 
 for opt in "$@"; do
 	case $opt in
+		-h|--help)
+			show_usage_info
+			exit 0
+			;;
 		-m=*|--mode=*)
 			mode="${opt#*=}"
 			shift
 			;;
-		-h|--help)
-			show_usage_info
-			exit 0
+		-n|--numbers)
+			by_numbers=1
+			shift
 			;;
 		*)
 			echo "Unknown option: '$opt'" 1>&2
@@ -88,8 +94,13 @@ gen_pipe() {
 			contents="${contents::REAL_CONTENTS_LIMIT}${LINE_MORE}"
 		fi
 		
-		echo "$contents"
-		echo $num
+		if [ "$by_numbers" -eq 0 ]; then
+			echo "$contents"
+			echo "$num"
+		else
+			echo "$num"
+			echo "$contents"
+		fi
 	done
 }
 
@@ -136,14 +147,16 @@ choose_mode() {
 		'Rename password'                     'rename-password'
 		'Select password and rename'          'select-and-rename-password'
 		)
+	[ "$by_numbers" -eq 0 ] && modes+=('* select by numbers *' 'by-numbers')
 	local chosen_mode=$(
 		printf '|%s' "${modes[@]}" \
 		| cut -b '2-' \
 		| tr '|' '\n' \
 		| zenity \
-			--width 320 --height 240 \
+			--width 300 --height 250 \
 			--title "$WND_TITLE" \
-			--text 'GPaste (choose action)' \
+			--text "GPaste (choose action)$(
+				[ "$by_numbers" -eq 1 ] && echo ' +numbers')" \
 			--list \
 			--print-column=2 \
 			--hide-column=2 \
@@ -153,7 +166,13 @@ choose_mode() {
 			2>/dev/null
 		)
 	([ $? -ne 0 ] || [ "$chosen_mode" == "" ]) && return 1
-	echo "$chosen_mode"
+	if [ "$chosen_mode" == "by-numbers" ]; then
+		by_numbers=1
+		choose_mode
+	else
+		echo "$by_numbers"
+		echo "$chosen_mode"
+	fi
 }
 
 get_text_from_user() {
@@ -181,12 +200,13 @@ select_from_history() {
 			--title "$WND_TITLE" \
 			--text "GPaste ($title)" \
 			--list \
-			--print-column=2 \
-			--hide-column=2 \
-			--hide-header \
-			--mid-search \
+			--print-column="$([ "$by_numbers" -eq 1 ] && echo 1 || echo 2)" \
+			$([ "$by_numbers" -eq 0 ] &&
+				echo --hide-column=2 --hide-header --mid-search) \
 			$([ "$multiple" -eq 1 ] && echo --multiple) \
-			--column 'Contents' --column '#' \
+			$([ "$by_numbers" -eq 0 ] &&
+				echo --column Contents --column '#' ||
+				echo --column '#' --column Contents) \
 			2>/dev/null
 		)
 	([ $? -ne 0 ] || [ "$choose" == "" ]) && return 1
@@ -244,7 +264,10 @@ if [ "$gpaste_list" == '' ]; then
 fi
 
 if [ "$mode" == 'choose' ]; then
-	mode=$(choose_mode); [ $? -ne 0 ] && exit 1
+	chosen_mode=$(choose_mode); [ $? -ne 0 ] && exit 1
+	by_numbers=$(echo "$chosen_mode" | head -n1)
+	mode=$(echo "$chosen_mode" | sed 1d)
+	([ "$by_numbers" != "$[$by_numbers]" ] || [ -z "$mode" ]) && exit 1
 fi
 
 
